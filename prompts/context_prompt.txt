@@ -1,0 +1,15 @@
+Application Name:
+Student Enrolment App
+
+Database Fields:
+- student_id
+- student_name
+- subject_code
+
+Endpoints:
+- GET /students
+- GET /students/{student_id}
+- GET /students/by-id
+- GET /students/by-subject
+- POST /ask
+- POST /ask-with-context

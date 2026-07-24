@@ -1,8 +1,12 @@
 from flask import Flask, render_template, request, send_from_directory
 from dotenv import load_dotenv
 from openai import OpenAI
+from pathlib import Path
 import sqlite3
 import os
+import shutil
+import subprocess
+import threading
 
 load_dotenv()
 
@@ -17,6 +21,13 @@ client = OpenAI(
     base_url=OLLAMA_BASE_URL,
     api_key="ollama"
 )
+
+PROMPT_DIR = Path(__file__).with_name("prompts")
+
+
+def load_prompt(filename):
+    prompt_path = PROMPT_DIR / filename
+    return prompt_path.read_text(encoding="utf-8").strip()
 
 
 def get_db_connection():
@@ -162,5 +173,80 @@ def ask_local_agent():
         )
 
 
+@app.route("/ask-with-context", methods=["POST"])
+def ask_with_context():
+    question = request.form.get("question", "").strip()
+
+    if not question:
+        return "<p>Question is required.</p>", 400
+
+    try:
+        system_prompt = load_prompt("system_prompt.txt")
+        task_prompt = load_prompt("task_prompt.txt")
+        context_prompt = load_prompt("context_prompt.txt")
+
+        final_prompt = f"""
+{task_prompt}
+
+{context_prompt}
+
+User Question:
+
+{question}
+"""
+
+        response = client.chat.completions.create(
+            model=OLLAMA_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": final_prompt
+                }
+            ],
+            max_tokens=300,
+            temperature=0.2,
+        )
+
+        answer = response.choices[0].message.content
+        return f"<p>{answer}</p>"
+
+    except Exception as exc:
+        return (
+            "<p>Context-aware request failed.</p>"
+            f"<pre>{exc}</pre>",
+            503,
+        )
+
+
+def launch_chrome(url):
+    chrome_candidates = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium-browser",
+        "chromium",
+    ]
+
+    for browser in chrome_candidates:
+        executable = shutil.which(browser)
+        if executable:
+            subprocess.Popen(
+                [executable, "--new-window", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+
+    return False
+
+
 if __name__ == "__main__":
+    if os.getenv("FLASK_OPEN_CHROME", "1") == "1":
+        is_reloader_process = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+        if is_reloader_process or not app.debug:
+            threading.Timer(1.0, launch_chrome, args=("http://127.0.0.1:5000",)).start()
+
     app.run(debug=True)

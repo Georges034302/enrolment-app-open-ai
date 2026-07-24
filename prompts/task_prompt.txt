@@ -1,0 +1,5 @@
+Explain the Student Enrolment App.
+
+Use only supplied context.
+
+Maximum 120 words.
